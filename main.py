@@ -64,42 +64,35 @@ def get_latest_messages():
     return all_messages
 
 
-def make_reply(text: str):
+def make_reply(text):
+
+    if not text:
+        return None
+
+    text = str(text)
     text_low = text.lower()
+
+    print("TEXT LOW:", text_low)
 
     if "антен" in text_low or "канал" in text_low or "телевиз" in text_low:
         return (
             "Саламатсызбы 😊\n\n"
-            "Антенна боюнча жардам беребиз.\n\n"
-            "1. Антеннанын штекерин телевизорго туура сайыңыз.\n"
-            "2. Настройкага кириңиз.\n"
-            "3. Каналы / Поиск каналов бөлүмүн тандаңыз.\n"
-            "4. DTV же Цифровое ТВ тандаңыз.\n"
-            "5. Автопоиск каналов басыңыз.\n\n"
-            "Эгер чыкпай жатса, телевизордун менюсун сүрөткө тартып жибериңиз."
+            "Антенна боюнча жардам беребиз."
         )
 
     if "сушил" in text_low or "сын" in text_low or "слом" in text_low:
         return (
             "Саламатсызбы.\n\n"
-            "Сураныч, сынган жердин сүрөтүн же кыска видео жибериңиз. "
-            "Карап чыгып, алмаштыруу же оңдоо боюнча жооп беребиз."
+            "Сураныч, сынган жерин сүрөтүн жибериңиз."
         )
 
     if "цена" in text_low or "баа" in text_low or "опт" in text_low or "каталог" in text_low:
         return (
             "Саламатсызбы 😊\n\n"
-            "Кайсы товар кызыктырып жатат?\n"
-            "1. Сушилка\n"
-            "2. Вешалка\n"
-            "3. Полка\n"
-            "4. Урна\n"
-            "5. Щит\n\n"
-            "Розница керекпи же оптовая цена керекпи?"
+            "Кайсы товар кызыктырып жатат?"
         )
 
     return None
-
 
 def send_openline_message(chat_id: int, deal_id: int, message: str):
     result = bitrix_call("imopenlines.crm.message.add", {
