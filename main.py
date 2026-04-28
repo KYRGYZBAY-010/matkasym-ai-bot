@@ -28,11 +28,38 @@ def bitrix_call(method: str, payload: dict | None = None):
 
 
 def get_latest_messages():
-    result = bitrix_call("im.dialog.messages.get", {
-        "DIALOG_ID": "chat1",
-        "LIMIT": 10
-    })
-    return result
+
+    deals = [284457]
+
+    all_messages = []
+
+    for deal_id in deals:
+
+        chat_result = bitrix_call("imopenlines.crm.chat.get", {
+            "CRM_ENTITY_TYPE": "DEAL",
+            "CRM_ENTITY": deal_id,
+            "ACTIVE_ONLY": "N"
+        })
+
+        chats = chat_result.get("result", [])
+
+        for ch in chats:
+
+            chat_id = ch.get("CHAT_ID")
+
+            if not chat_id:
+                continue
+
+            msg_result = bitrix_call("im.dialog.messages.get", {
+                "DIALOG_ID": f"chat{chat_id}",
+                "LIMIT": 10
+            })
+
+            messages = msg_result.get("result", {}).get("messages", [])
+
+            all_messages.extend(messages)
+
+    return {"result": {"messages": all_messages}}
 
 
 def make_reply(text: str):
