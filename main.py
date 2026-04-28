@@ -11,6 +11,9 @@ def root():
     return {"status": "MATKASYM AI BOT WORKING"}
 
 @app.post("/webhook")
+def webhook_get():
+    print("GET WEBHOOK TEST")
+    return {"status": "webhook endpoint exists"}
 async def webhook(request: Request):
 
     try:
