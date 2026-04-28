@@ -1,70 +1,118 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 import requests
 import os
+import time
+import threading
 
 app = FastAPI()
 
 BITRIX_WEBHOOK = os.getenv("BITRIX_WEBHOOK")
+USER_ID = 100023
+CHECK_INTERVAL = 10
 
-@app.get("/webhook")
-def webhook_get():
-    print("GET WEBHOOK TEST")
-    return {"status": "webhook endpoint exists"}
+processed_messages = set()
 
-@app.post("/webhook")
-def webhook_get():
-    print("GET WEBHOOK TEST")
-    return {"status": "webhook endpoint exists"}
-async def webhook(request: Request):
 
+@app.get("/")
+def root():
+    return {"status": "MATKASYM AI BOT WORKING"}
+
+
+def bitrix_call(method: str, payload: dict | None = None):
+    url = f"{BITRIX_WEBHOOK}{method}"
+    response = requests.post(url, data=payload or {}, timeout=20)
     try:
-        form_data = await request.form()
+        return response.json()
+    except Exception:
+        return {"raw": response.text}
 
-        print("FORM DATA:")
-        print(dict(form_data))
 
-        data = dict(form_data)
+def get_latest_messages():
+    result = bitrix_call("im.dialog.messages.get", {
+        "DIALOG_ID": "chat1",
+        "LIMIT": 10
+    })
+    return result
 
-        message = str(data.get("data[MESSAGE]", "")).lower()
 
-        chat_id = data.get("data[CHAT_ID]")
-        crm_entity = data.get("data[CRM_ENTITY]")
-        user_id = 100023
+def make_reply(text: str):
+    text_low = text.lower()
 
-        reply = None
+    if "антен" in text_low or "канал" in text_low or "телевиз" in text_low:
+        return (
+            "Саламатсызбы 😊\n\n"
+            "Антенна боюнча жардам беребиз.\n\n"
+            "1. Антеннанын штекерин телевизорго туура сайыңыз.\n"
+            "2. Настройкага кириңиз.\n"
+            "3. Каналы / Поиск каналов бөлүмүн тандаңыз.\n"
+            "4. DTV же Цифровое ТВ тандаңыз.\n"
+            "5. Автопоиск каналов басыңыз.\n\n"
+            "Эгер чыкпай жатса, телевизордун менюсун сүрөткө тартып жибериңиз."
+        )
 
-        if "антен" in message or "канал" in message:
-            reply = (
-                "Саламатсызбы 😊\n\n"
-                "1. Настройкага кириңиз\n"
-                "2. DTV же Цифровое ТВ тандаңыз\n"
-                "3. Автопоиск каналов басыңыз\n\n"
-                "Эгер жардам керек болсо менюну сүрөткө тартып жибериңиз."
-            )
+    if "сушил" in text_low or "сын" in text_low or "слом" in text_low:
+        return (
+            "Саламатсызбы.\n\n"
+            "Сураныч, сынган жердин сүрөтүн же кыска видео жибериңиз. "
+            "Карап чыгып, алмаштыруу же оңдоо боюнча жооп беребиз."
+        )
 
-        elif "сушилка" in message or "сломал" in message:
-            reply = (
-                "Саламатсызбы.\n"
-                "Сураныч сынган жердин сүрөтүн жибериңиз 😊"
-            )
+    if "цена" in text_low or "баа" in text_low or "опт" in text_low or "каталог" in text_low:
+        return (
+            "Саламатсызбы 😊\n\n"
+            "Кайсы товар кызыктырып жатат?\n"
+            "1. Сушилка\n"
+            "2. Вешалка\n"
+            "3. Полка\n"
+            "4. Урна\n"
+            "5. Щит\n\n"
+            "Розница керекпи же оптовая цена керекпи?"
+        )
 
-        if reply:
-            url = f"{BITRIX_WEBHOOK}imopenlines.crm.message.add"
+    return None
 
-            payload = {
-                "CRM_ENTITY_TYPE": "DEAL",
-                "CRM_ENTITY": crm_entity,
-                "CHAT_ID": chat_id,
-                "USER_ID": user_id,
-                "MESSAGE": reply
-            }
 
-            response = requests.post(url, data=payload)
+def polling_loop():
+    print("Polling started")
 
-            print(response.text)
+    while True:
+        try:
+            data = get_latest_messages()
+            print("POLL RESULT:", data)
 
-    except Exception as e:
-        print("ERROR:")
-        print(e)
+            messages = data.get("result", {}).get("messages", [])
 
-    return {"ok": True}
+            for msg in messages:
+                msg_id = msg.get("id")
+                author_id = msg.get("author_id")
+                text = msg.get("text", "")
+                chat_id = msg.get("chat_id")
+
+                if not msg_id or msg_id in processed_messages:
+                    continue
+
+                processed_messages.add(msg_id)
+
+                if str(author_id) == str(USER_ID):
+                    continue
+
+                reply = make_reply(text)
+
+                if reply and chat_id:
+                    bitrix_call("im.message.add", {
+                        "DIALOG_ID": f"chat{chat_id}",
+                        "MESSAGE": reply
+                    })
+
+                    print("Replied to chat:", chat_id)
+
+        except Exception as e:
+            print("POLL ERROR:", e)
+
+        time.sleep(CHECK_INTERVAL)
+
+
+@app.on_event("startup")
+def start_polling():
+    thread = threading.Thread(target=polling_loop, daemon=True)
+    thread.start()
