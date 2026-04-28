@@ -12,15 +12,19 @@ def root():
 
 @app.post("/webhook")
 async def webhook(request: Request):
-    data = await request.json()
-
-    print(data)
 
     try:
-        message = data.get("data", {}).get("MESSAGE", "").lower()
+        form_data = await request.form()
 
-        chat_id = data.get("data", {}).get("CHAT_ID")
-        crm_entity = data.get("data", {}).get("CRM_ENTITY")
+        print("FORM DATA:")
+        print(dict(form_data))
+
+        data = dict(form_data)
+
+        message = str(data.get("data[MESSAGE]", "")).lower()
+
+        chat_id = data.get("data[CHAT_ID]")
+        crm_entity = data.get("data[CRM_ENTITY]")
         user_id = 100023
 
         reply = None
@@ -51,9 +55,12 @@ async def webhook(request: Request):
                 "MESSAGE": reply
             }
 
-            requests.post(url, data=payload)
+            response = requests.post(url, data=payload)
+
+            print(response.text)
 
     except Exception as e:
+        print("ERROR:")
         print(e)
 
     return {"ok": True}
