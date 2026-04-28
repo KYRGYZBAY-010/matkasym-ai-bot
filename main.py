@@ -119,6 +119,7 @@ def send_openline_message(chat_id: int, deal_id: int, message: str):
 
 def polling_loop():
     print("Polling started")
+    print("NEW VERSION LOADED")
 
     while True:
         try:
