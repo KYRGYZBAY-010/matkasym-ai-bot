@@ -10,6 +10,9 @@ BITRIX_WEBHOOK = os.getenv("BITRIX_WEBHOOK")
 USER_ID = 100023
 CHECK_INTERVAL = 10
 
+# пока фиксируем одну тестовую сделку
+DEALS = [284457]
+
 processed_messages = set()
 
 
@@ -21,6 +24,7 @@ def root():
 def bitrix_call(method: str, payload: dict | None = None):
     url = f"{BITRIX_WEBHOOK}{method}"
     response = requests.post(url, data=payload or {}, timeout=20)
+
     try:
         return response.json()
     except Exception:
@@ -28,23 +32,20 @@ def bitrix_call(method: str, payload: dict | None = None):
 
 
 def get_latest_messages():
-
-    deals = [284457]
-
     all_messages = []
 
-    for deal_id in deals:
-
+    for deal_id in DEALS:
         chat_result = bitrix_call("imopenlines.crm.chat.get", {
             "CRM_ENTITY_TYPE": "DEAL",
             "CRM_ENTITY": deal_id,
             "ACTIVE_ONLY": "N"
         })
 
+        print("CHAT RESULT:", chat_result)
+
         chats = chat_result.get("result", [])
 
         for ch in chats:
-
             chat_id = ch.get("CHAT_ID")
 
             if not chat_id:
@@ -57,9 +58,13 @@ def get_latest_messages():
 
             messages = msg_result.get("result", {}).get("messages", [])
 
+            for msg in messages:
+                msg["deal_id"] = deal_id
+                msg["openline_chat_id"] = chat_id
+
             all_messages.extend(messages)
 
-    return {"result": {"messages": all_messages}}
+    return all_messages
 
 
 def make_reply(text: str):
@@ -99,39 +104,59 @@ def make_reply(text: str):
     return None
 
 
+def send_openline_message(chat_id: int, deal_id: int, message: str):
+    result = bitrix_call("imopenlines.crm.message.add", {
+        "CRM_ENTITY_TYPE": "DEAL",
+        "CRM_ENTITY": deal_id,
+        "USER_ID": USER_ID,
+        "CHAT_ID": chat_id,
+        "MESSAGE": message
+    })
+
+    print("SEND RESULT:", result)
+    return result
+
+
 def polling_loop():
     print("Polling started")
 
     while True:
         try:
-            data = get_latest_messages()
-            print("POLL RESULT:", data)
-
-            messages = data.get("result", {}).get("messages", [])
+            messages = get_latest_messages()
+            print("MESSAGES COUNT:", len(messages))
 
             for msg in messages:
                 msg_id = msg.get("id")
                 author_id = msg.get("author_id")
                 text = msg.get("text", "")
-                chat_id = msg.get("chat_id")
+                chat_id = msg.get("openline_chat_id")
+                deal_id = msg.get("deal_id")
 
-                if not msg_id or msg_id in processed_messages:
+                if not msg_id:
+                    continue
+
+                if msg_id in processed_messages:
                     continue
 
                 processed_messages.add(msg_id)
 
+                # не отвечаем на свои сообщения
                 if str(author_id) == str(USER_ID):
                     continue
 
+                print("NEW MESSAGE:", {
+                    "id": msg_id,
+                    "author_id": author_id,
+                    "chat_id": chat_id,
+                    "deal_id": deal_id,
+                    "text": text
+                })
+
                 reply = make_reply(text)
 
-                if reply and chat_id:
-                    bitrix_call("im.message.add", {
-                        "DIALOG_ID": f"chat{chat_id}",
-                        "MESSAGE": reply
-                    })
-
-                    print("Replied to chat:", chat_id)
+                if reply and chat_id and deal_id:
+                    send_openline_message(chat_id, deal_id, reply)
+                    print("Replied to OpenLine chat:", chat_id)
 
         except Exception as e:
             print("POLL ERROR:", e)
