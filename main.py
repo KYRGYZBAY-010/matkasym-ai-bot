@@ -8,7 +8,7 @@ app = FastAPI()
 
 BITRIX_WEBHOOK = os.getenv("BITRIX_WEBHOOK")
 USER_ID = 100023
-CHECK_INTERVAL = 10
+CHECK_INTERVAL = 50
 
 # пока фиксируем одну тестовую сделку
 DEALS = [284457]
@@ -134,6 +134,14 @@ def polling_loop():
 
                 if not msg_id:
                     continue
+                    
+                    print("MSG CHECK:", {
+                        "id": msg_id,
+                        "author_id": author_id,
+                        "chat_id": chat_id,
+                        "deal_id": deal_id,
+                        "text": text
+                    })
 
                 if msg_id in processed_messages:
                     continue
