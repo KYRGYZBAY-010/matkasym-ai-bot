@@ -6,9 +6,10 @@ app = FastAPI()
 
 BITRIX_WEBHOOK = os.getenv("BITRIX_WEBHOOK")
 
-@app.get("/")
-def root():
-    return {"status": "MATKASYM AI BOT WORKING"}
+@app.get("/webhook")
+def webhook_get():
+    print("GET WEBHOOK TEST")
+    return {"status": "webhook endpoint exists"}
 
 @app.post("/webhook")
 def webhook_get():
