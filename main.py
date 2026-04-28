@@ -9,7 +9,7 @@ app = FastAPI()
 BITRIX_WEBHOOK = os.getenv("BITRIX_WEBHOOK")
 USER_ID = 100023
 CHECK_INTERVAL = 30
-DEALS = [284457, 284697]
+DEALS = []
 
 processed_messages = set()
 
