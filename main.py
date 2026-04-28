@@ -149,10 +149,10 @@ def polling_loop():
 
                 processed_messages.add(msg_id)
 
-                # не отвечаем на свои сообщения
-                if str(author_id) == str(USER_ID):
+                # пропускаем системные сообщения
+                if author_id == 0:
                     continue
-
+                    
                 print("NEW MESSAGE:", {
                     "id": msg_id,
                     "author_id": author_id,
@@ -161,7 +161,7 @@ def polling_loop():
                     "text": text
                 })
 
-                reply = make_reply(text)
+                print("REPLY GENERATED:", reply)
 
                 if reply and chat_id and deal_id:
                     send_openline_message(chat_id, deal_id, reply)
