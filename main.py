@@ -8,9 +8,7 @@ app = FastAPI()
 
 BITRIX_WEBHOOK = os.getenv("BITRIX_WEBHOOK")
 USER_ID = 100023
-CHECK_INTERVAL = 50
-
-# пока фиксируем одну тестовую сделку
+CHECK_INTERVAL = 30
 DEALS = [284457]
 
 processed_messages = set()
@@ -24,7 +22,6 @@ def root():
 def bitrix_call(method: str, payload: dict | None = None):
     url = f"{BITRIX_WEBHOOK}{method}"
     response = requests.post(url, data=payload or {}, timeout=20)
-
     try:
         return response.json()
     except Exception:
@@ -46,21 +43,21 @@ def get_latest_messages():
         chats = chat_result.get("result", [])
 
         for ch in chats:
-            chat_id = ch.get("CHAT_ID")
+            openline_chat_id = ch.get("CHAT_ID")
 
-            if not chat_id:
+            if not openline_chat_id:
                 continue
 
             msg_result = bitrix_call("im.dialog.messages.get", {
-                "DIALOG_ID": f"chat{chat_id}",
-                "LIMIT": 10
+                "DIALOG_ID": f"chat{openline_chat_id}",
+                "LIMIT": 50
             })
 
             messages = msg_result.get("result", {}).get("messages", [])
 
             for msg in messages:
                 msg["deal_id"] = deal_id
-                msg["openline_chat_id"] = chat_id
+                msg["openline_chat_id"] = openline_chat_id
 
             all_messages.extend(messages)
 
@@ -119,7 +116,7 @@ def send_openline_message(chat_id: int, deal_id: int, message: str):
 
 def polling_loop():
     print("Polling started")
-    print("NEW VERSION LOADED")
+    print("NEW CLEAN VERSION LOADED")
 
     while True:
         try:
@@ -135,31 +132,24 @@ def polling_loop():
 
                 if not msg_id:
                     continue
-                    
-                    print("MSG CHECK:", {
-                        "id": msg_id,
-                        "author_id": author_id,
-                        "chat_id": chat_id,
-                        "deal_id": deal_id,
-                        "text": text
-                    })
 
-                if msg_id in processed_messages:
-                    continue
-
-                processed_messages.add(msg_id)
-
-                # пропускаем системные сообщения
-                if author_id == 0:
-                    continue
-                    
-                print("NEW MESSAGE:", {
+                print("MSG CHECK:", {
                     "id": msg_id,
                     "author_id": author_id,
                     "chat_id": chat_id,
                     "deal_id": deal_id,
                     "text": text
                 })
+
+                if msg_id in processed_messages:
+                    continue
+
+                processed_messages.add(msg_id)
+
+                if author_id == 0:
+                    continue
+
+                reply = make_reply(text)
 
                 print("REPLY GENERATED:", reply)
 
