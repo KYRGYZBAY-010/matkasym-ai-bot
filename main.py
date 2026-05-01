@@ -8,22 +8,23 @@ app = FastAPI()
 
 BITRIX_WEBHOOK = os.getenv("BITRIX_WEBHOOK")
 USER_ID = 100023
-CHECK_INTERVAL = 30
+CHECK_INTERVAL = 10
 
-# тестируем только одну сделку
 DEALS = [284697]
 
 processed_messages = set()
+initialized = False
 
 
 @app.get("/")
 def root():
-    return {"status": "MATKASYM AI BOT WORKING SAFE VERSION"}
+    return {"status": "MATKASYM AI BOT SAFE ACTIVE"}
 
 
 def bitrix_call(method: str, payload: dict | None = None):
     url = f"{BITRIX_WEBHOOK}{method}"
     response = requests.post(url, data=payload or {}, timeout=20)
+
     try:
         return response.json()
     except Exception:
@@ -71,7 +72,6 @@ def make_reply(text):
         return None
 
     text_low = str(text).lower()
-
     print("TEXT LOW:", text_low)
 
     if "антен" in text_low or "канал" in text_low or "телевиз" in text_low:
@@ -108,19 +108,6 @@ def make_reply(text):
     return None
 
 
-def send_openline_message(chat_id: int, deal_id: int, message: str):
-    result = bitrix_call("imopenlines.crm.message.add", {
-        "CRM_ENTITY_TYPE": "DEAL",
-        "CRM_ENTITY": deal_id,
-        "USER_ID": USER_ID,
-        "CHAT_ID": chat_id,
-        "MESSAGE": message
-    })
-
-    print("SEND RESULT:", result)
-    return result
-
-
 def should_skip_message(msg):
     msg_id = msg.get("id")
     author_id = msg.get("author_id")
@@ -132,15 +119,12 @@ def should_skip_message(msg):
     if msg_id in processed_messages:
         return True
 
-    # системные сообщения Bitrix/OpenLine
     if author_id == 0:
         return True
 
-    # сообщения от нашего пользователя/бота
     if str(author_id) == str(USER_ID):
         return True
 
-    # сообщения-ошибки Wazzup и автоответы
     blocked_phrases = [
         "отправлено автоматически",
         "system wz",
@@ -158,14 +142,42 @@ def should_skip_message(msg):
     return False
 
 
+def send_openline_message(chat_id: int, deal_id: int, message: str):
+    payload = {
+        "CRM_ENTITY_TYPE": "DEAL",
+        "CRM_ENTITY": deal_id,
+        "USER_ID": USER_ID,
+        "CHAT_ID": chat_id,
+        "MESSAGE": message
+    }
+
+    result = bitrix_call("imopenlines.crm.message.add", payload)
+    print("SEND PAYLOAD:", payload)
+    print("SEND RESULT:", result)
+    return result
+
+
 def polling_loop():
+    global initialized
+
     print("Polling started")
-    print("SAFE VERSION LOADED")
+    print("SAFE FINAL VERSION LOADED")
 
     while True:
         try:
             messages = get_latest_messages()
             print("MESSAGES COUNT:", len(messages))
+
+            if not initialized:
+                for msg in messages:
+                    msg_id = msg.get("id")
+                    if msg_id:
+                        processed_messages.add(msg_id)
+
+                initialized = True
+                print("INITIAL HISTORY SKIPPED")
+                time.sleep(CHECK_INTERVAL)
+                continue
 
             for msg in messages:
                 msg_id = msg.get("id")
@@ -188,7 +200,6 @@ def polling_loop():
                 processed_messages.add(msg_id)
 
                 reply = make_reply(text)
-
                 print("REPLY GENERATED:", reply)
 
                 if reply and chat_id and deal_id:
