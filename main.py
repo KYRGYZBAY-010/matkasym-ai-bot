@@ -93,7 +93,7 @@ def make_reply(text):
             "Карап чыгып, алмаштыруу же оңдоо боюнча жооп беребиз."
         )
 
-    if "цена" in text_low or "баа" in text_low or "опт" in text_low or "каталог" in text_low:
+    if "цена" in text_low or "баа" in text_low or "baa" in text_low or "опт" in text_low or "каталог" in text_low:
         return (
             "Саламатсызбы 😊\n\n"
             "Кайсы товар кызыктырып жатат?\n"
