@@ -36,26 +36,28 @@ def bitrix_call(method: str, payload: dict | None = None):
         return {"raw": response.text}
 
 
+def get_deal_chats(deal_id: int):
+    chat_result = bitrix_call(
+        "imopenlines.crm.chat.get",
+        {
+            "CRM_ENTITY_TYPE": "DEAL",
+            "CRM_ENTITY": deal_id,
+            "ACTIVE_ONLY": "N"
+        }
+    )
+
+    print("CHAT RESULT:", chat_result)
+
+    return chat_result.get("result", [])
+
+
 def get_latest_messages():
     all_messages = []
 
     for deal_id in DEALS:
-
-        chat_result = bitrix_call(
-            "imopenlines.crm.chat.get",
-            {
-                "CRM_ENTITY_TYPE": "DEAL",
-                "CRM_ENTITY": deal_id,
-                "ACTIVE_ONLY": "N"
-            }
-        )
-
-        print("CHAT RESULT:", chat_result)
-
-        chats = chat_result.get("result", [])
+        chats = get_deal_chats(deal_id)
 
         for ch in chats:
-
             openline_chat_id = ch.get("CHAT_ID")
 
             if not openline_chat_id:
@@ -81,15 +83,12 @@ def get_latest_messages():
 
 
 def make_reply(text):
-
     if not text:
         return None
 
     text_low = str(text).lower()
-
     print("TEXT LOW:", text_low)
 
-    # АНТЕННА
     if (
         "антен" in text_low
         or "канал" in text_low
@@ -106,7 +105,6 @@ def make_reply(text):
             "Эгер чыкпай жатса, телевизордун менюсун сүрөткө тартып жибериңиз."
         )
 
-    # ПОЛОМКА
     if (
         "сынды" in text_low
         or "сломался" in text_low
@@ -119,7 +117,6 @@ def make_reply(text):
             "Карап чыгып, алмаштыруу же оңдоо боюнча жооп беребиз."
         )
 
-    # СУШИЛКА
     if (
         "сушилка" in text_low
         or "сушил" in text_low
@@ -134,7 +131,6 @@ def make_reply(text):
             "Розница керекпи же оптомбу?"
         )
 
-    # ЦЕНА
     if (
         "цена" in text_low
         or "баа" in text_low
@@ -157,7 +153,6 @@ def make_reply(text):
 
 
 def should_skip_message(msg):
-
     msg_id = msg.get("id")
     author_id = msg.get("author_id")
     text = str(msg.get("text", "")).lower()
@@ -191,12 +186,24 @@ def should_skip_message(msg):
     return False
 
 
-def send_openline_message(chat_id: int, deal_id: int, message: str):
+def intercept_openline_chat(chat_id: int):
+    result = bitrix_call(
+        "imopenlines.session.intercept",
+        {
+            "CHAT_ID": chat_id
+        }
+    )
 
+    print("INTERCEPT RESULT:", result)
+    return result
+
+
+def send_openline_message(chat_id: int, deal_id: int, message: str):
     payload = {
         "CRM_ENTITY_TYPE": "DEAL",
         "CRM_ENTITY": deal_id,
         "USER_ID": USER_ID,
+        "CHAT_ID": chat_id,
         "MESSAGE": message
     }
 
@@ -212,39 +219,29 @@ def send_openline_message(chat_id: int, deal_id: int, message: str):
 
 
 def polling_loop():
-
     global initialized
 
     print("Polling started")
     print("SAFE FINAL VERSION LOADED")
 
     while True:
-
         try:
-
             messages = get_latest_messages()
-
             print("MESSAGES COUNT:", len(messages))
 
-            # ПРОПУСК СТАРЫХ СООБЩЕНИЙ
             if not initialized:
-
                 for msg in messages:
-
                     msg_id = msg.get("id")
-
                     if msg_id:
                         processed_messages.add(msg_id)
 
                 initialized = True
-
                 print("INITIAL HISTORY SKIPPED")
 
                 time.sleep(CHECK_INTERVAL)
                 continue
 
             for msg in messages:
-
                 msg_id = msg.get("id")
                 author_id = msg.get("author_id")
                 text = msg.get("text", "")
@@ -269,28 +266,11 @@ def polling_loop():
                 print("REPLY GENERATED:", reply)
 
                 if reply and chat_id and deal_id:
-
-                    # АВТО-ПРИСОЕДИНЕНИЕ К ДИАЛОГУ
-                    intercept_result = bitrix_call(
-                        "imopenlines.session.intercept",
-                        {
-                            "CHAT_ID": chat_id
-                        }
-                    )
-
-                    print("INTERCEPT RESULT:", intercept_result)
-
-                    # ОТПРАВКА СООБЩЕНИЯ
-                    send_openline_message(
-                        chat_id,
-                        deal_id,
-                        reply
-                    )
-
+                    intercept_openline_chat(chat_id)
+                    send_openline_message(chat_id, deal_id, reply)
                     print("Replied to OpenLine chat:", chat_id)
 
         except Exception as e:
-
             print("POLL ERROR:", e)
 
         time.sleep(CHECK_INTERVAL)
@@ -298,7 +278,6 @@ def polling_loop():
 
 @app.on_event("startup")
 def start_polling():
-
     thread = threading.Thread(
         target=polling_loop,
         daemon=True
