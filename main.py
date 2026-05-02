@@ -42,7 +42,7 @@ def get_deal_chats(deal_id: int):
         {
             "CRM_ENTITY_TYPE": "DEAL",
             "CRM_ENTITY": deal_id,
-            "ACTIVE_ONLY": "N"
+            "ACTIVE_ONLY": "Y"
         }
     )
 
