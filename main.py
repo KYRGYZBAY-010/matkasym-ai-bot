@@ -197,7 +197,6 @@ def send_openline_message(chat_id: int, deal_id: int, message: str):
         "CRM_ENTITY_TYPE": "DEAL",
         "CRM_ENTITY": deal_id,
         "USER_ID": USER_ID,
-        "CHAT_ID": chat_id,
         "MESSAGE": message
     }
 
