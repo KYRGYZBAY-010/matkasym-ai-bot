@@ -6,9 +6,13 @@ import time
 import threading
 
 app = FastAPI()
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+client = OpenAI(
+    api_key=os.getenv("OPENAI_API_KEY")
+)
 
 BITRIX_WEBHOOK = os.getenv("BITRIX_WEBHOOK")
+
 USER_ID = 100023
 CHECK_INTERVAL = 10
 
@@ -20,10 +24,13 @@ initialized = False
 
 @app.get("/")
 def root():
-    return {"status": "MATKASYM AI BOT SAFE ACTIVE"}
+    return {
+        "status": "MATKASYM AI BOT ACTIVE"
+    }
 
 
 def bitrix_call(method: str, payload: dict | None = None):
+
     url = f"{BITRIX_WEBHOOK}{method}"
 
     response = requests.post(
@@ -34,12 +41,16 @@ def bitrix_call(method: str, payload: dict | None = None):
 
     try:
         return response.json()
+
     except Exception:
-        return {"raw": response.text}
+        return {
+            "raw": response.text
+        }
 
 
 def get_deal_chats(deal_id: int):
-    chat_result = bitrix_call(
+
+    result = bitrix_call(
         "imopenlines.crm.chat.get",
         {
             "CRM_ENTITY_TYPE": "DEAL",
@@ -48,18 +59,21 @@ def get_deal_chats(deal_id: int):
         }
     )
 
-    print("CHAT RESULT:", chat_result)
+    print("ACTIVE CHAT RESULT:", result)
 
-    return chat_result.get("result", [])
+    return result.get("result", [])
 
 
 def get_latest_messages():
+
     all_messages = []
 
     for deal_id in DEALS:
+
         chats = get_deal_chats(deal_id)
 
         for ch in chats:
+
             openline_chat_id = ch.get("CHAT_ID")
 
             if not openline_chat_id:
@@ -73,7 +87,11 @@ def get_latest_messages():
                 }
             )
 
-            messages = msg_result.get("result", {}).get("messages", [])
+            messages = (
+                msg_result
+                .get("result", {})
+                .get("messages", [])
+            )
 
             for msg in messages:
                 msg["deal_id"] = deal_id
@@ -82,36 +100,56 @@ def get_latest_messages():
             all_messages.extend(messages)
 
     return all_messages
+
+
 def generate_ai_reply(user_text: str):
 
     try:
+
         response = client.responses.create(
             model="gpt-5-mini",
             input=f"""
 Ты менеджер компании MATKASYM.
 
-Отвечай:
-- коротко
-- вежливо
-- на кыргызском языке
-- без лишнего текста
+Правила:
+- отвечай коротко
+- отвечай как живой менеджер
+- язык ответа = кыргызский
+- без длинных текстов
+- без markdown
+- без звёздочек
+- если клиент спрашивает цену:
+  сначала уточни товар
+- если клиент пишет про поломку:
+  попроси фото или видео
+- если клиент пишет про сушилку:
+  уточни какой тип нужен
 
 Сообщение клиента:
 {user_text}
 """
         )
 
-        return response.output_text.strip()
+        text = response.output_text.strip()
+
+        print("OPENAI RESPONSE:", text)
+
+        return text
 
     except Exception as e:
+
         print("OPENAI ERROR:", e)
+
         return None
 
+
 def make_reply(text):
+
     if not text:
         return None
 
     text_low = str(text).lower()
+
     print("TEXT LOW:", text_low)
 
     if (
@@ -119,15 +157,11 @@ def make_reply(text):
         or "канал" in text_low
         or "телевиз" in text_low
     ):
+
         return (
             "Саламатсызбы 😊\n\n"
             "Антенна боюнча жардам беребиз.\n\n"
-            "1. Антеннанын штекерин телевизорго туура сайыңыз.\n"
-            "2. Настройкага кириңиз.\n"
-            "3. Каналы / Поиск каналов бөлүмүн тандаңыз.\n"
-            "4. DTV же Цифровое ТВ тандаңыз.\n"
-            "5. Автопоиск каналов басыңыз.\n\n"
-            "Эгер чыкпай жатса, телевизордун менюсун сүрөткө тартып жибериңиз."
+            "Телевизордун менюсун сүрөткө тартып жибериңиз."
         )
 
     if (
@@ -136,24 +170,24 @@ def make_reply(text):
         or "сломано" in text_low
         or "брак" in text_low
     ):
+
         return (
             "Саламатсызбы.\n\n"
-            "Сураныч, сынган жердин сүрөтүн же кыска видео жибериңиз.\n"
-            "Карап чыгып, алмаштыруу же оңдоо боюнча жооп беребиз."
+            "Сураныч, сүрөт же видео жибериңиз.\n"
+            "Карап чыгып жардам беребиз."
         )
 
     if (
         "сушилка" in text_low
         or "сушил" in text_low
     ):
+
         return (
             "Саламатсызбы 😊\n\n"
-            "Сушилка бар.\n\n"
-            "Кайсы размер кызыктырып жатат?\n\n"
+            "Кайсы сушилка керек?\n\n"
             "1. Настенный\n"
             "2. Напольный\n"
-            "3. Потолочный\n\n"
-            "Розница керекпи же оптомбу?"
+            "3. Потолочный"
         )
 
     if (
@@ -163,21 +197,16 @@ def make_reply(text):
         or "опт" in text_low
         or "каталог" in text_low
     ):
+
         return (
-            "Саламатсызбы 😊\n\n"
-            "Кайсы товар кызыктырып жатат?\n\n"
-            "1. Сушилка\n"
-            "2. Вешалка\n"
-            "3. Полка\n"
-            "4. Урна\n"
-            "5. Щит\n\n"
-            "Розница керекпи же оптовая цена керекпи?"
+            "Кайсы товар кызыктырып жатат?"
         )
 
     return None
 
 
 def should_skip_message(msg):
+
     msg_id = msg.get("id")
     author_id = msg.get("author_id")
     text = str(msg.get("text", "")).lower()
@@ -205,6 +234,7 @@ def should_skip_message(msg):
     ]
 
     for phrase in blocked_phrases:
+
         if phrase in text:
             return True
 
@@ -212,6 +242,7 @@ def should_skip_message(msg):
 
 
 def intercept_openline_chat(chat_id: int):
+
     result = bitrix_call(
         "imopenlines.session.intercept",
         {
@@ -220,10 +251,16 @@ def intercept_openline_chat(chat_id: int):
     )
 
     print("INTERCEPT RESULT:", result)
+
     return result
 
 
-def send_openline_message(chat_id: int, deal_id: int, message: str):
+def send_openline_message(
+    chat_id: int,
+    deal_id: int,
+    message: str
+):
+
     payload = {
         "CRM_ENTITY_TYPE": "DEAL",
         "CRM_ENTITY": deal_id,
@@ -244,29 +281,38 @@ def send_openline_message(chat_id: int, deal_id: int, message: str):
 
 
 def polling_loop():
+
     global initialized
 
-    print("Polling started")
-    print("SAFE FINAL VERSION LOADED")
+    print("POLLING STARTED")
+    print("GPT VERSION ACTIVE")
 
     while True:
+
         try:
+
             messages = get_latest_messages()
+
             print("MESSAGES COUNT:", len(messages))
 
             if not initialized:
+
                 for msg in messages:
+
                     msg_id = msg.get("id")
+
                     if msg_id:
                         processed_messages.add(msg_id)
 
                 initialized = True
+
                 print("INITIAL HISTORY SKIPPED")
 
                 time.sleep(CHECK_INTERVAL)
                 continue
 
             for msg in messages:
+
                 msg_id = msg.get("id")
                 author_id = msg.get("author_id")
                 text = msg.get("text", "")
@@ -286,16 +332,32 @@ def polling_loop():
 
                 processed_messages.add(msg_id)
 
-                reply = make_reply(text)
+                reply = generate_ai_reply(text)
 
-                print("REPLY GENERATED:", reply)
+                print("AI REPLY:", reply)
+
+                if not reply:
+                    reply = make_reply(text)
+
+                print("FINAL REPLY:", reply)
 
                 if reply and chat_id and deal_id:
+
                     intercept_openline_chat(chat_id)
-                    send_openline_message(chat_id, deal_id, reply)
-                    print("Replied to OpenLine chat:", chat_id)
+
+                    send_openline_message(
+                        chat_id,
+                        deal_id,
+                        reply
+                    )
+
+                    print(
+                        "REPLIED TO CHAT:",
+                        chat_id
+                    )
 
         except Exception as e:
+
             print("POLL ERROR:", e)
 
         time.sleep(CHECK_INTERVAL)
@@ -303,6 +365,7 @@ def polling_loop():
 
 @app.on_event("startup")
 def start_polling():
+
     thread = threading.Thread(
         target=polling_loop,
         daemon=True
