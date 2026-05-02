@@ -1,10 +1,12 @@
 from fastapi import FastAPI
+from openai import OpenAI
 import requests
 import os
 import time
 import threading
 
 app = FastAPI()
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 BITRIX_WEBHOOK = os.getenv("BITRIX_WEBHOOK")
 USER_ID = 100023
@@ -80,7 +82,30 @@ def get_latest_messages():
             all_messages.extend(messages)
 
     return all_messages
+def generate_ai_reply(user_text: str):
 
+    try:
+        response = client.responses.create(
+            model="gpt-5-mini",
+            input=f"""
+Ты менеджер компании MATKASYM.
+
+Отвечай:
+- коротко
+- вежливо
+- на кыргызском языке
+- без лишнего текста
+
+Сообщение клиента:
+{user_text}
+"""
+        )
+
+        return response.output_text.strip()
+
+    except Exception as e:
+        print("OPENAI ERROR:", e)
+        return None
 
 def make_reply(text):
     if not text:
