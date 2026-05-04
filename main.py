@@ -18,13 +18,50 @@ CHECK_INTERVAL = 10
 
 DEALS = [284697]
 
+SALES_PHONE = "+996700244226"
+
 processed_messages = set()
 initialized = False
 
 
+SYSTEM_PROMPT = f"""
+Сен MATKASYM / Зоркий глаз компаниясынын кардарларды колдоо операторусуң.
+
+Маанилүү:
+- Бул сатуу боту эмес, кардарларды колдоо боту.
+- Сатып алуу, баа, заказ, барбы, наличиеси, оптом, каталог боюнча суроо болсо:
+  кардарды сатуу менеджерине жөнөт: {SALES_PHONE}
+- Өзүң баа айтпа.
+- Өзүң заказ кабыл алба.
+- Так эмес маалыматты ойлоп таппа.
+- Эгер билбесең: "Так маалымат үчүн менеджерге жазыңыз" деп айт.
+- Жооп кыргызча болсун.
+- Жооп кыска, так, сылык болсун.
+- 1 гана тактоочу суроо бер.
+- Узун текст жазба.
+
+Зоркий глаз товарлары:
+- Антенналар: Smart10, Smart15, Smart20, Sanarip10, Sanarip15, Sanarip20, Compact, Tereze
+- Кабель бар
+- Усилитель бар
+- Приставка жок
+- Антенна кронштейни жок
+- Ошондой эле: сушилка, гладильная доска, стеллаж, полка
+
+Колдоо эрежелери:
+- Антенна иштебесе: канал чыкпай жатабы же сигнал жокпу такта.
+- DTV керек, ATV эмес.
+- Канал чыкпаса: DTV режиминде автопоиск кылдыруу керек.
+- Сигнал жок болсо: антеннаны терезеге жакын коюп, багытын өзгөртүүнү айт.
+- Приставка болсо: TV/DTV режимине өтүүнү айт.
+- Фото/видео келсе: карап чыгып жооп беребиз деп айт.
+- Дефект, сынуу, брак болсо: сүрөт же кыска видео сура.
+"""
+
+
 @app.get("/")
 def root():
-    return {"status": "MATKASYM AI BOT ACTIVE"}
+    return {"status": "MATKASYM AI SUPPORT BOT ACTIVE"}
 
 
 def bitrix_call(method: str, payload: dict | None = None):
@@ -89,24 +126,14 @@ def generate_ai_reply(user_text: str):
             messages=[
                 {
                     "role": "system",
-                    "content": (
-                        "Сен MATKASYM компаниясынын кардарларды колдоо операторусуң. "
-                        "Бул сатуу боту эмес, колдоо боту. "
-                        "Кардарга кыска, так, сылык жооп бер. "
-                        "Жооп кыргызча болсун. "
-                        "Эгер маалымат жетишсиз болсо, бир гана тактоочу суроо бер. "
-                        "Эгер товар боюнча сураса, түрүн же моделин такта. "
-                        "Эгер бузулуу/сынуу/дефект болсо, фото же видео сура. "
-                        "Эгер баа сураса, кайсы товар экенин такта. "
-                        "Жоопту 1-4 сүйлөм менен жаз."
-                    )
+                    "content": SYSTEM_PROMPT
                 },
                 {
                     "role": "user",
                     "content": user_text
                 }
             ],
-            temperature=0.4,
+            temperature=0.3,
             max_tokens=160
         )
 
@@ -126,13 +153,41 @@ def make_reply(text):
     text_low = str(text).lower()
     print("TEXT LOW:", text_low)
 
+    buy_words = [
+        "цена", "баа", "канча", "сколько стоит",
+        "заказ", "заказать", "сатып", "алам",
+        "барбы", "есть", "налич", "опт", "каталог"
+    ]
+
+    if any(word in text_low for word in buy_words):
+        return (
+            "Саламатсызбы. Сатып алуу, баа же наличиеси боюнча "
+            f"менеджер жардам берет: {SALES_PHONE}"
+        )
+
+    if "приставка" in text_low or "ресивер" in text_low:
+        return (
+            "Саламатсызбы. Бизде приставка жок. "
+            f"Так маалымат үчүн менеджерге жазыңыз: {SALES_PHONE}"
+        )
+
+    if "кронштейн" in text_low and "антен" in text_low:
+        return (
+            "Саламатсызбы. Антенна үчүн кронштейн азыр жок. "
+            f"Так маалымат үчүн менеджерге жазыңыз: {SALES_PHONE}"
+        )
+
     if (
         "антен" in text_low
         or "канал" in text_low
         or "телевиз" in text_low
+        or "dtv" in text_low
+        or "atv" in text_low
+        or "сигнал" in text_low
     ):
         return (
-            "Саламатсызбы. Антенна боюнча жардам беребиз. "
+            "Саламатсызбы. Антенна боюнча жардам беребиз.\n"
+            "Канал чыкпай жатабы же сигнал жокпу?\n"
             "Телевизордун менюсун сүрөткө тартып жибериңиз."
         )
 
@@ -142,31 +197,24 @@ def make_reply(text):
         or "сломано" in text_low
         or "брак" in text_low
         or "дефект" in text_low
+        or "кыйшай" in text_low
+        or "мыйрый" in text_low
+        or "винт" in text_low
     ):
         return (
-            "Саламатсызбы. Сураныч, көйгөй болгон жердин сүрөтүн же кыска видео жибериңиз. "
-            "Карап чыгып жардам беребиз."
+            "Саламатсызбы. Сураныч, көйгөй болгон жердин сүрөтүн "
+            "же кыска видео жибериңиз. Карап чыгып жардам беребиз."
         )
 
     if (
-        "сушилка" in text_low
-        or "сушил" in text_low
+        "кайтарып" in text_low
+        or "вернуть" in text_low
+        or "возврат" in text_low
     ):
         return (
-            "Саламатсызбы. Кайсы сушилка керек?\n"
-            "1. Настенный\n"
-            "2. Напольный\n"
-            "3. Потолочный"
+            "Саламатсызбы. Макул, текшерип көрөбүз. "
+            "Сураныч, товарды жана көйгөйүн сүрөт/видео менен жибериңиз."
         )
-
-    if (
-        "цена" in text_low
-        or "баа" in text_low
-        or "baa" in text_low
-        or "опт" in text_low
-        or "каталог" in text_low
-    ):
-        return "Саламатсызбы. Кайсы товар боюнча баа керек?"
 
     return None
 
@@ -208,7 +256,9 @@ def should_skip_message(msg):
 def intercept_openline_chat(chat_id: int):
     result = bitrix_call(
         "imopenlines.session.intercept",
-        {"CHAT_ID": chat_id}
+        {
+            "CHAT_ID": chat_id
+        }
     )
 
     print("INTERCEPT RESULT:", result)
@@ -231,6 +281,7 @@ def send_openline_message(chat_id: int, deal_id: int, message: str):
 
     print("SEND PAYLOAD:", payload)
     print("SEND RESULT:", result)
+
     return result
 
 
@@ -238,7 +289,7 @@ def polling_loop():
     global initialized
 
     print("POLLING STARTED")
-    print("OPENROUTER FREE VERSION ACTIVE")
+    print("MATKASYM SUPPORT AI VERSION ACTIVE")
 
     while True:
         try:
@@ -253,6 +304,7 @@ def polling_loop():
 
                 initialized = True
                 print("INITIAL HISTORY SKIPPED")
+
                 time.sleep(CHECK_INTERVAL)
                 continue
 
@@ -276,10 +328,17 @@ def polling_loop():
 
                 processed_messages.add(msg_id)
 
-                ai_reply = generate_ai_reply(text)
-                print("AI REPLY:", ai_reply)
+                # Сначала жёсткие правила поддержки/покупки
+                rule_reply = make_reply(text)
 
-                reply = ai_reply if ai_reply else make_reply(text)
+                if rule_reply:
+                    reply = rule_reply
+                    print("RULE REPLY:", reply)
+                else:
+                    # Потом AI, если правило не сработало
+                    reply = generate_ai_reply(text)
+                    print("AI REPLY:", reply)
+
                 print("FINAL REPLY:", reply)
 
                 if reply and chat_id and deal_id:
