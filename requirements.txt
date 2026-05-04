@@ -1,7 +1,1 @@
-fastapi
-uvicorn
 requests
-openai
-python-dotenv
-schedule
-openai
