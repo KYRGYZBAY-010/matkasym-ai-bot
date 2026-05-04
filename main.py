@@ -8,7 +8,8 @@ import threading
 app = FastAPI()
 
 client = OpenAI(
-    api_key=os.getenv("OPENAI_API_KEY")
+    api_key=os.getenv("OPENROUTER_API_KEY"),
+    base_url="https://openrouter.ai/api/v1"
 )
 
 BITRIX_WEBHOOK = os.getenv("BITRIX_WEBHOOK")
@@ -106,39 +107,38 @@ def generate_ai_reply(user_text: str):
 
     try:
 
-        response = client.responses.create(
-            model="gpt-5-mini",
-            input=f"""
-Ты менеджер компании MATKASYM.
+        response = client.chat.completions.create(
+            model="mistralai/mistral-7b-instruct",
 
-Правила:
-- отвечай коротко
-- отвечай как живой менеджер
-- язык ответа = кыргызский
-- без длинных текстов
-- без markdown
-- без звёздочек
-- если клиент спрашивает цену:
-  сначала уточни товар
-- если клиент пишет про поломку:
-  попроси фото или видео
-- если клиент пишет про сушилку:
-  уточни какой тип нужен
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Ты менеджер MATKASYM. "
+                        "Отвечай коротко, живо, "
+                        "на кыргызском языке. "
+                        "Задавай уточняющие вопросы."
+                    )
+                },
+                {
+                    "role": "user",
+                    "content": user_text
+                }
+            ],
 
-Сообщение клиента:
-{user_text}
-"""
+            temperature=0.7,
+            max_tokens=200
         )
 
-        text = response.output_text.strip()
+        text = response.choices[0].message.content.strip()
 
-        print("OPENAI RESPONSE:", text)
+        print("OPENROUTER RESPONSE:", text)
 
         return text
 
     except Exception as e:
 
-        print("OPENAI ERROR:", e)
+        print("OPENROUTER ERROR:", e)
 
         return None
 
