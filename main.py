@@ -13,7 +13,6 @@ client = OpenAI(
 )
 
 BITRIX_WEBHOOK = os.getenv("BITRIX_WEBHOOK")
-
 USER_ID = 100023
 CHECK_INTERVAL = 10
 
@@ -25,32 +24,20 @@ initialized = False
 
 @app.get("/")
 def root():
-    return {
-        "status": "MATKASYM AI BOT ACTIVE"
-    }
+    return {"status": "MATKASYM AI BOT ACTIVE"}
 
 
 def bitrix_call(method: str, payload: dict | None = None):
-
     url = f"{BITRIX_WEBHOOK}{method}"
-
-    response = requests.post(
-        url,
-        data=payload or {},
-        timeout=20
-    )
+    response = requests.post(url, data=payload or {}, timeout=20)
 
     try:
         return response.json()
-
     except Exception:
-        return {
-            "raw": response.text
-        }
+        return {"raw": response.text}
 
 
 def get_deal_chats(deal_id: int):
-
     result = bitrix_call(
         "imopenlines.crm.chat.get",
         {
@@ -61,20 +48,16 @@ def get_deal_chats(deal_id: int):
     )
 
     print("ACTIVE CHAT RESULT:", result)
-
     return result.get("result", [])
 
 
 def get_latest_messages():
-
     all_messages = []
 
     for deal_id in DEALS:
-
         chats = get_deal_chats(deal_id)
 
         for ch in chats:
-
             openline_chat_id = ch.get("CHAT_ID")
 
             if not openline_chat_id:
@@ -88,11 +71,7 @@ def get_latest_messages():
                 }
             )
 
-            messages = (
-                msg_result
-                .get("result", {})
-                .get("messages", [])
-            )
+            messages = msg_result.get("result", {}).get("messages", [])
 
             for msg in messages:
                 msg["deal_id"] = deal_id
@@ -104,20 +83,22 @@ def get_latest_messages():
 
 
 def generate_ai_reply(user_text: str):
-
     try:
-
         response = client.chat.completions.create(
-            model="mistralai/mistral-7b-instruct",
-
+            model="openrouter/free",
             messages=[
                 {
                     "role": "system",
                     "content": (
-                        "Ты менеджер MATKASYM. "
-                        "Отвечай коротко, живо, "
-                        "на кыргызском языке. "
-                        "Задавай уточняющие вопросы."
+                        "Сен MATKASYM компаниясынын кардарларды колдоо операторусуң. "
+                        "Бул сатуу боту эмес, колдоо боту. "
+                        "Кардарга кыска, так, сылык жооп бер. "
+                        "Жооп кыргызча болсун. "
+                        "Эгер маалымат жетишсиз болсо, бир гана тактоочу суроо бер. "
+                        "Эгер товар боюнча сураса, түрүн же моделин такта. "
+                        "Эгер бузулуу/сынуу/дефект болсо, фото же видео сура. "
+                        "Эгер баа сураса, кайсы товар экенин такта. "
+                        "Жоопту 1-4 сүйлөм менен жаз."
                     )
                 },
                 {
@@ -125,31 +106,24 @@ def generate_ai_reply(user_text: str):
                     "content": user_text
                 }
             ],
-
-            temperature=0.7,
-            max_tokens=200
+            temperature=0.4,
+            max_tokens=160
         )
 
         text = response.choices[0].message.content.strip()
-
         print("OPENROUTER RESPONSE:", text)
-
         return text
 
     except Exception as e:
-
         print("OPENROUTER ERROR:", e)
-
         return None
 
 
 def make_reply(text):
-
     if not text:
         return None
 
     text_low = str(text).lower()
-
     print("TEXT LOW:", text_low)
 
     if (
@@ -157,10 +131,8 @@ def make_reply(text):
         or "канал" in text_low
         or "телевиз" in text_low
     ):
-
         return (
-            "Саламатсызбы 😊\n\n"
-            "Антенна боюнча жардам беребиз.\n\n"
+            "Саламатсызбы. Антенна боюнча жардам беребиз. "
             "Телевизордун менюсун сүрөткө тартып жибериңиз."
         )
 
@@ -169,11 +141,10 @@ def make_reply(text):
         or "сломался" in text_low
         or "сломано" in text_low
         or "брак" in text_low
+        or "дефект" in text_low
     ):
-
         return (
-            "Саламатсызбы.\n\n"
-            "Сураныч, сүрөт же видео жибериңиз.\n"
+            "Саламатсызбы. Сураныч, көйгөй болгон жердин сүрөтүн же кыска видео жибериңиз. "
             "Карап чыгып жардам беребиз."
         )
 
@@ -181,10 +152,8 @@ def make_reply(text):
         "сушилка" in text_low
         or "сушил" in text_low
     ):
-
         return (
-            "Саламатсызбы 😊\n\n"
-            "Кайсы сушилка керек?\n\n"
+            "Саламатсызбы. Кайсы сушилка керек?\n"
             "1. Настенный\n"
             "2. Напольный\n"
             "3. Потолочный"
@@ -197,16 +166,12 @@ def make_reply(text):
         or "опт" in text_low
         or "каталог" in text_low
     ):
-
-        return (
-            "Кайсы товар кызыктырып жатат?"
-        )
+        return "Саламатсызбы. Кайсы товар боюнча баа керек?"
 
     return None
 
 
 def should_skip_message(msg):
-
     msg_id = msg.get("id")
     author_id = msg.get("author_id")
     text = str(msg.get("text", "")).lower()
@@ -234,7 +199,6 @@ def should_skip_message(msg):
     ]
 
     for phrase in blocked_phrases:
-
         if phrase in text:
             return True
 
@@ -242,25 +206,16 @@ def should_skip_message(msg):
 
 
 def intercept_openline_chat(chat_id: int):
-
     result = bitrix_call(
         "imopenlines.session.intercept",
-        {
-            "CHAT_ID": chat_id
-        }
+        {"CHAT_ID": chat_id}
     )
 
     print("INTERCEPT RESULT:", result)
-
     return result
 
 
-def send_openline_message(
-    chat_id: int,
-    deal_id: int,
-    message: str
-):
-
+def send_openline_message(chat_id: int, deal_id: int, message: str):
     payload = {
         "CRM_ENTITY_TYPE": "DEAL",
         "CRM_ENTITY": deal_id,
@@ -276,43 +231,32 @@ def send_openline_message(
 
     print("SEND PAYLOAD:", payload)
     print("SEND RESULT:", result)
-
     return result
 
 
 def polling_loop():
-
     global initialized
 
     print("POLLING STARTED")
-    print("GPT VERSION ACTIVE")
+    print("OPENROUTER FREE VERSION ACTIVE")
 
     while True:
-
         try:
-
             messages = get_latest_messages()
-
             print("MESSAGES COUNT:", len(messages))
 
             if not initialized:
-
                 for msg in messages:
-
                     msg_id = msg.get("id")
-
                     if msg_id:
                         processed_messages.add(msg_id)
 
                 initialized = True
-
                 print("INITIAL HISTORY SKIPPED")
-
                 time.sleep(CHECK_INTERVAL)
                 continue
 
             for msg in messages:
-
                 msg_id = msg.get("id")
                 author_id = msg.get("author_id")
                 text = msg.get("text", "")
@@ -332,32 +276,18 @@ def polling_loop():
 
                 processed_messages.add(msg_id)
 
-                reply = generate_ai_reply(text)
+                ai_reply = generate_ai_reply(text)
+                print("AI REPLY:", ai_reply)
 
-                print("AI REPLY:", reply)
-
-                if not reply:
-                    reply = make_reply(text)
-
+                reply = ai_reply if ai_reply else make_reply(text)
                 print("FINAL REPLY:", reply)
 
                 if reply and chat_id and deal_id:
-
                     intercept_openline_chat(chat_id)
-
-                    send_openline_message(
-                        chat_id,
-                        deal_id,
-                        reply
-                    )
-
-                    print(
-                        "REPLIED TO CHAT:",
-                        chat_id
-                    )
+                    send_openline_message(chat_id, deal_id, reply)
+                    print("REPLIED TO CHAT:", chat_id)
 
         except Exception as e:
-
             print("POLL ERROR:", e)
 
         time.sleep(CHECK_INTERVAL)
@@ -365,10 +295,8 @@ def polling_loop():
 
 @app.on_event("startup")
 def start_polling():
-
     thread = threading.Thread(
         target=polling_loop,
         daemon=True
     )
-
     thread.start()
