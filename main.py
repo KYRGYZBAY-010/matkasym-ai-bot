@@ -20,57 +20,40 @@ DEALS = [284697]
 SALES_PHONE = "+996700244226"
 
 processed_messages = set()
+dialog_states = {}
 initialized = False
 
 
 SYSTEM_PROMPT = f"""
 Сен MATKASYM / Зоркий глаз компаниясынын кардарларды колдоо операторусуң.
 
-Маанилүү:
-- Бул сатуу боту эмес, кардарларды колдоо боту.
-- Сатып алуу, баа, заказ, барбы, наличиеси, оптом, каталог боюнча суроо болсо:
-  кардарды сатуу менеджерине жөнөт: {SALES_PHONE}
-- Өзүң баа айтпа.
-- Өзүң заказ кабыл алба.
-- Так эмес маалыматты ойлоп таппа.
-- Эгер билбесең: "Так маалымат үчүн менеджерге жазыңыз" деп айт.
-- Жооп кыргызча болсун.
-- Жооп кыска, так, сылык болсун.
-- 1 гана тактоочу суроо бер.
-- Узун текст жазба.
+Бул сатуу боту эмес, кардарларды колдоо боту.
 
-Зоркий глаз товарлары:
+Эреже:
+- Жооп кыргызча болсун.
+- Кыска, так, сылык жооп бер.
+- Баа, заказ, сатып алуу, наличие боюнча менеджерге жөнөт: {SALES_PHONE}
+- Так эмес маалыматты ойлоп таппа.
+- Эгер билбесең, менеджерге багытта.
+
+Товарлар:
 - Антенналар: Smart10, Smart15, Smart20, Sanarip10, Sanarip15, Sanarip20, Compact, Tereze
 - Кабель бар
 - Усилитель бар
 - Приставка жок
 - Антенна кронштейни жок
-- Ошондой эле: сушилка, гладильная доска, стеллаж, полка
-
-Колдоо эрежелери:
-- Антенна иштебесе: канал чыкпай жатабы же сигнал жокпу такта.
-- DTV керек, ATV эмес.
-- Канал чыкпаса: DTV режиминде автопоиск кылдыруу керек.
-- Сигнал жок болсо: антеннаны терезеге жакын коюп, багытын өзгөртүүнү айт.
-- Приставка болсо: TV/DTV режимине өтүүнү айт.
-- Фото/видео келсе: карап чыгып жооп беребиз деп айт.
-- Дефект, сынуу, брак болсо: сүрөт же кыска видео сура.
+- Сушилка, гладильная доска, стеллаж, полка бар
 """
 
 
 @app.get("/")
 def root():
-    return {"status": "MATKASYM AI SUPPORT BOT ACTIVE"}
+    return {"status": "MATKASYM AI SUPPORT BOT WITH STATE ACTIVE"}
 
 
 def bitrix_call(method: str, payload: dict | None = None):
     url = f"{BITRIX_WEBHOOK}{method}"
-
-    response = requests.post(
-        url,
-        data=payload or {},
-        timeout=20
-    )
+    response = requests.post(url, data=payload or {}, timeout=20)
 
     try:
         return response.json()
@@ -100,7 +83,6 @@ def get_latest_messages():
 
         for ch in chats:
             openline_chat_id = ch.get("CHAT_ID")
-
             if not openline_chat_id:
                 continue
 
@@ -128,14 +110,8 @@ def generate_ai_reply(user_text: str):
         response = client.chat.completions.create(
             model="openrouter/free",
             messages=[
-                {
-                    "role": "system",
-                    "content": SYSTEM_PROMPT
-                },
-                {
-                    "role": "user",
-                    "content": user_text
-                }
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_text}
             ],
             temperature=0.3,
             max_tokens=160
@@ -150,51 +126,168 @@ def generate_ai_reply(user_text: str):
         return None
 
 
-def make_reply(text):
+def set_state(chat_id, state):
+    dialog_states[str(chat_id)] = state
+    print("STATE SET:", chat_id, state)
+
+
+def get_state(chat_id):
+    return dialog_states.get(str(chat_id))
+
+
+def clear_state(chat_id):
+    if str(chat_id) in dialog_states:
+        del dialog_states[str(chat_id)]
+        print("STATE CLEARED:", chat_id)
+
+
+def make_reply(text, chat_id):
     if not text:
         return None
 
     text_low = str(text).lower().strip()
+    state = get_state(chat_id)
+
     print("TEXT LOW:", text_low)
+    print("CURRENT STATE:", state)
 
-    # Покупка / цена / наличие
-    buy_words = [
-        "цена", "баа", "канча", "сколько стоит",
-        "заказ", "заказать", "сатып", "алам",
-        "барбы", "есть", "налич", "опт", "каталог"
-    ]
+    # 1. Дефект всегда выше покупки
+    if (
+        "сынды" in text_low
+        or "сынып" in text_low
+        or "сломался" in text_low
+        or "сломано" in text_low
+        or "брак" in text_low
+        or "дефект" in text_low
+        or "кыйшай" in text_low
+        or "мыйрый" in text_low
+        or "винт" in text_low
+        or "полкасы" in text_low
+        or "сварка" in text_low
+    ):
+        set_state(chat_id, "defect_support")
+        return (
+            "Саламатсызбы. Сураныч, көйгөй болгон жердин сүрөтүн "
+            "же кыска видео жибериңиз. Карап чыгып жардам беребиз."
+        )
 
-    # Исключение: если это ответ по сушилке, не отправляем сразу в продажи
-    dryer_choice_words = [
-        "потолоч", "настенн", "наполь"
-    ]
-
-    if any(word in text_low for word in dryer_choice_words):
-        if "потолоч" in text_low:
+    # 2. Если клиент прислал фото/видео/мынаке после проблемы
+    if (
+        "мынаке" in text_low
+        or "сүрөт" in text_low
+        or "фото" in text_low
+        or "видео" in text_low
+        or "жибердим" in text_low
+        or "посмотри" in text_low
+    ):
+        if state == "antenna_support":
             return (
-                "Саламатсызбы. Потолочный сушилка боюнча "
-                f"сатып алуу жана наличиеси үчүн менеджерге жазыңыз: {SALES_PHONE}"
+                "Рахмат. Антенна боюнча карап көрөлү.\n"
+                "SOURCE басып, TV/DTV режимин тандаңыз. "
+                "Андан кийин DTV режиминде автопоиск кылыңыз."
+            )
+
+        if state == "defect_support":
+            return (
+                "Рахмат. Сүрөт/видеону кабыл алдык. "
+                "Карап чыгып, оңдоо же алмаштыруу боюнча жооп беребиз."
+            )
+
+        return (
+            "Рахмат. Маалыматты кабыл алдык. "
+            "Карап чыгып жооп беребиз."
+        )
+
+    # 3. Сушилка — выбор типа
+    if (
+        "сушилка" in text_low
+        or "сушил" in text_low
+        or "кийим кургат" in text_low
+    ):
+        set_state(chat_id, "dryer_support")
+        return (
+            "Саламатсызбы. Кайсы сушилка керек?\n"
+            "1. Настенный\n"
+            "2. Напольный\n"
+            "3. Потолочный"
+        )
+
+    if state == "dryer_support":
+        if "потолоч" in text_low:
+            clear_state(chat_id)
+            return (
+                "Потолочный сушилка боюнча сатып алуу жана наличиеси үчүн "
+                f"менеджерге жазыңыз: {SALES_PHONE}"
             )
 
         if "настенн" in text_low:
+            clear_state(chat_id)
             return (
-                "Саламатсызбы. Настенный сушилка боюнча "
-                f"сатып алуу жана наличиеси үчүн менеджерге жазыңыз: {SALES_PHONE}"
+                "Настенный сушилка боюнча сатып алуу жана наличиеси үчүн "
+                f"менеджерге жазыңыз: {SALES_PHONE}"
             )
 
         if "наполь" in text_low:
+            clear_state(chat_id)
             return (
-                "Саламатсызбы. Напольный сушилка боюнча "
-                f"сатып алуу жана наличиеси үчүн менеджерге жазыңыз: {SALES_PHONE}"
+                "Напольный сушилка боюнча сатып алуу жана наличиеси үчүн "
+                f"менеджерге жазыңыз: {SALES_PHONE}"
             )
 
+    # 4. Антенна support
+    if (
+        "антен" in text_low
+        or "канал" in text_low
+        or "телевиз" in text_low
+        or "dtv" in text_low
+        or "atv" in text_low
+        or "сигнал" in text_low
+        or "иштеб" in text_low
+        or "чыкпай" in text_low
+        or "поиск" in text_low
+        or "табылбай" in text_low
+    ):
+        set_state(chat_id, "antenna_support")
+        return (
+            "Саламатсызбы. Антенна боюнча жардам беребиз.\n"
+            "Канал чыкпай жатабы же сигнал жокпу?\n"
+            "Телевизордун менюсун сүрөткө тартып жибериңиз."
+        )
+
+    if state == "antenna_support":
+        if "поиск" in text_low or "чыкпай" in text_low or "табылбай" in text_low:
+            return (
+                "DTV режимин тандап, автопоиск кылыңыз. "
+                "Эгер канал чыкпаса, антеннаны терезеге жакын коюп, багытын өзгөртүп көрүңүз."
+            )
+
+        if "сигнал" in text_low or "жок" in text_low:
+            return (
+                "Антеннаны терезеге жакын коюп, багытын акырын өзгөртүп көрүңүз. "
+                "Андан кийин DTV автопоиск кылыңыз."
+            )
+
+        if "atv" in text_low:
+            return (
+                "ATV эмес, DTV тандоо керек. "
+                "SOURCE басып TV/DTV режимин тандаңыз."
+            )
+
+    # 5. Покупка / цена / наличие
+    buy_words = [
+        "цена", "баа", "канча", "сколько стоит",
+        "заказ", "заказать", "сатып", "алам",
+        "есть", "налич", "опт", "каталог", "алсам"
+    ]
+
     if any(word in text_low for word in buy_words):
+        set_state(chat_id, "sales_transfer")
         return (
             "Саламатсызбы. Сатып алуу, баа же наличиеси боюнча "
             f"менеджер жардам берет: {SALES_PHONE}"
         )
 
-    # Нет в продаже
+    # 6. Товары, которых нет
     if "приставка" in text_low or "ресивер" in text_low:
         return (
             "Саламатсызбы. Бизде приставка жок. "
@@ -207,47 +300,13 @@ def make_reply(text):
             f"Так маалымат үчүн менеджерге жазыңыз: {SALES_PHONE}"
         )
 
-    # Антенна / ТВ поддержка
-    if (
-        "антен" in text_low
-        or "канал" in text_low
-        or "телевиз" in text_low
-        or "dtv" in text_low
-        or "atv" in text_low
-        or "сигнал" in text_low
-        or "иштеб" in text_low
-        or "чыкпай" in text_low
-    ):
-        return (
-            "Саламатсызбы. Антенна боюнча жардам беребиз.\n"
-            "Канал чыкпай жатабы же сигнал жокпу?\n"
-            "Телевизордун менюсун сүрөткө тартып жибериңиз."
-        )
-
-    # Дефект / брак / поломка
-    if (
-        "сынды" in text_low
-        or "сломался" in text_low
-        or "сломано" in text_low
-        or "брак" in text_low
-        or "дефект" in text_low
-        or "кыйшай" in text_low
-        or "мыйрый" in text_low
-        or "винт" in text_low
-        or "полкасы" in text_low
-        or "сварка" in text_low
-    ):
-        return (
-            "Саламатсызбы. Сураныч, көйгөй болгон жердин сүрөтүн "
-            "же кыска видео жибериңиз. Карап чыгып жардам беребиз."
-        )
-
-    # Возврат
+    # 7. Возврат
     if (
         "кайтарып" in text_low
         or "вернуть" in text_low
         or "возврат" in text_low
     ):
+        set_state(chat_id, "return_support")
         return (
             "Саламатсызбы. Макул, текшерип көрөбүз. "
             "Сураныч, товарды жана көйгөйүн сүрөт/видео менен жибериңиз."
@@ -267,11 +326,9 @@ def should_skip_message(msg):
     if msg_id in processed_messages:
         return True
 
-    # системные сообщения Bitrix/Wazzup
     if author_id == 0:
         return True
 
-    # свои сообщения оператора/бота
     if str(author_id) == str(USER_ID):
         return True
 
@@ -302,9 +359,7 @@ def should_skip_message(msg):
 def intercept_openline_chat(chat_id: int):
     result = bitrix_call(
         "imopenlines.session.intercept",
-        {
-            "CHAT_ID": chat_id
-        }
+        {"CHAT_ID": chat_id}
     )
 
     print("INTERCEPT RESULT:", result)
@@ -327,7 +382,6 @@ def send_openline_message(chat_id: int, deal_id: int, message: str):
 
     print("SEND PAYLOAD:", payload)
     print("SEND RESULT:", result)
-
     return result
 
 
@@ -335,7 +389,7 @@ def polling_loop():
     global initialized
 
     print("POLLING STARTED")
-    print("MATKASYM SUPPORT AI VERSION ACTIVE")
+    print("MATKASYM STATE SUPPORT VERSION ACTIVE")
 
     while True:
         try:
@@ -350,7 +404,6 @@ def polling_loop():
 
                 initialized = True
                 print("INITIAL HISTORY SKIPPED")
-
                 time.sleep(CHECK_INTERVAL)
                 continue
 
@@ -375,7 +428,7 @@ def polling_loop():
 
                 processed_messages.add(msg_id)
 
-                rule_reply = make_reply(text)
+                rule_reply = make_reply(text, chat_id)
 
                 if rule_reply:
                     reply = rule_reply
