@@ -1,14 +1,12 @@
 import os
+import time
 import requests
-from fastapi import FastAPI, Request
-
-app = FastAPI()
 
 BITRIX_WEBHOOK = os.getenv("BITRIX_WEBHOOK")
 
-# ===== STATE STORAGE =====
+# ===== STATE =====
 user_states = {}
-processed_messages = set()
+processed_ids = set()
 
 def get_state(chat_id):
     return user_states.get(chat_id)
@@ -17,41 +15,26 @@ def set_state(chat_id, state):
     user_states[chat_id] = state
 
 
-# ===== ОТПРАВКА СООБЩЕНИЯ =====
-def send_message(chat_id, user_id, text):
+# ===== SEND =====
+def send_message(chat_id, text):
     url = f"{BITRIX_WEBHOOK}im.message.add.json"
     payload = {
         "DIALOG_ID": chat_id,
         "MESSAGE": text
     }
-
     print("SEND:", payload)
-    try:
-        requests.post(url, json=payload)
-    except Exception as e:
-        print("SEND ERROR:", e)
+    requests.post(url, json=payload)
 
 
-# ===== ОСНОВНАЯ ЛОГИКА =====
-def handle_message(chat_id, user_id, author_id, message_id, text):
-
-    # --- защита от дублей ---
-    if message_id in processed_messages:
-        print("SKIPPED MESSAGE:", message_id)
-        return None
-    processed_messages.add(message_id)
-
-    # --- не отвечаем сами себе ---
-    if str(author_id) == str(user_id):
-        return None
-
+# ===== LOGIC =====
+def handle(chat_id, text):
     text_low = text.lower()
     state = get_state(chat_id)
 
     print("STATE:", state, "| TEXT:", text_low)
 
     # ===== ПРОДАЖА =====
-    if any(x in text_low for x in ["цена", "сколько", "наличие", "барбы", "канча"]):
+    if any(x in text_low for x in ["цена", "канча", "сколько", "наличие", "барбы"]):
         return "Сатып алуу боюнча менеджер жардам берет:\n+996700244226"
 
     # ===== СУШИЛКА =====
@@ -61,7 +44,7 @@ def handle_message(chat_id, user_id, author_id, message_id, text):
 
     if state == "waiting_media":
         set_state(chat_id, "processing")
-        return "Рахмат. Карап чыгып, оңдоо же алмаштыруу боюнча жооп беребиз."
+        return "Рахмат. Карап чыгып жооп беребиз."
 
     if state == "processing":
         return "Менеджер жакын арада сиз менен байланышат."
@@ -76,42 +59,62 @@ def handle_message(chat_id, user_id, author_id, message_id, text):
             return "DTV режимине өтүп, автопоиск кылыңыз."
         return "SOURCE басып, TV/DTV режимин тандаңыз."
 
-    # ===== ДЕФОЛТ =====
+    # ===== DEFAULT =====
     return "Саламатсызбы 😊 Кантип жардам бере алабыз?"
 
 
-# ===== WEBHOOK =====
-@app.post("/webhook")
-async def webhook(request: Request):
-    data = await request.json()
-
-    print("INCOMING:", data)
-
-    try:
-        message = data.get("data", {})
-
-        chat_id = message.get("chat_id")
-        author_id = message.get("author_id")
-        message_id = message.get("id")
-        text = message.get("text")
-
-        user_id = data.get("auth", {}).get("user_id")
-
-        if not text:
-            return {"status": "no_text"}
-
-        reply = handle_message(chat_id, user_id, author_id, message_id, text)
-
-        if reply:
-            send_message(chat_id, user_id, reply)
-
-    except Exception as e:
-        print("ERROR:", e)
-
-    return {"status": "ok"}
+# ===== GET MESSAGES =====
+def get_messages():
+    url = f"{BITRIX_WEBHOOK}im.dialog.messages.get.json"
+    params = {
+        "DIALOG_ID": "chat0",
+        "LIMIT": 20
+    }
+    r = requests.get(url, params=params)
+    return r.json()
 
 
-# ===== HEALTH =====
-@app.get("/")
-def root():
-    return {"status": "MATKASYM STABLE SUPPORT VERSION ACTIVE"}
+# ===== MAIN LOOP =====
+def run():
+    print("POLLING STARTED")
+
+    while True:
+        try:
+            data = get_messages()
+
+            if "result" not in data:
+                time.sleep(5)
+                continue
+
+            messages = data["result"]["messages"]
+
+            for msg in messages:
+                msg_id = msg["id"]
+
+                if msg_id in processed_ids:
+                    continue
+
+                processed_ids.add(msg_id)
+
+                text = msg.get("text", "")
+                chat_id = msg.get("chat_id")
+
+                if not text:
+                    continue
+
+                print("NEW MSG:", text)
+
+                reply = handle(chat_id, text)
+
+                if reply:
+                    send_message(chat_id, reply)
+
+        except Exception as e:
+            print("ERROR:", e)
+
+        time.sleep(5)
+
+
+# ===== START =====
+if __name__ == "__main__":
+    run()
