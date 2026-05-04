@@ -17,7 +17,6 @@ USER_ID = 100023
 CHECK_INTERVAL = 10
 
 DEALS = [284697]
-
 SALES_PHONE = "+996700244226"
 
 processed_messages = set()
@@ -66,7 +65,12 @@ def root():
 
 def bitrix_call(method: str, payload: dict | None = None):
     url = f"{BITRIX_WEBHOOK}{method}"
-    response = requests.post(url, data=payload or {}, timeout=20)
+
+    response = requests.post(
+        url,
+        data=payload or {},
+        timeout=20
+    )
 
     try:
         return response.json()
@@ -150,14 +154,39 @@ def make_reply(text):
     if not text:
         return None
 
-    text_low = str(text).lower()
+    text_low = str(text).lower().strip()
     print("TEXT LOW:", text_low)
 
+    # Покупка / цена / наличие
     buy_words = [
         "цена", "баа", "канча", "сколько стоит",
         "заказ", "заказать", "сатып", "алам",
         "барбы", "есть", "налич", "опт", "каталог"
     ]
+
+    # Исключение: если это ответ по сушилке, не отправляем сразу в продажи
+    dryer_choice_words = [
+        "потолоч", "настенн", "наполь"
+    ]
+
+    if any(word in text_low for word in dryer_choice_words):
+        if "потолоч" in text_low:
+            return (
+                "Саламатсызбы. Потолочный сушилка боюнча "
+                f"сатып алуу жана наличиеси үчүн менеджерге жазыңыз: {SALES_PHONE}"
+            )
+
+        if "настенн" in text_low:
+            return (
+                "Саламатсызбы. Настенный сушилка боюнча "
+                f"сатып алуу жана наличиеси үчүн менеджерге жазыңыз: {SALES_PHONE}"
+            )
+
+        if "наполь" in text_low:
+            return (
+                "Саламатсызбы. Напольный сушилка боюнча "
+                f"сатып алуу жана наличиеси үчүн менеджерге жазыңыз: {SALES_PHONE}"
+            )
 
     if any(word in text_low for word in buy_words):
         return (
@@ -165,6 +194,7 @@ def make_reply(text):
             f"менеджер жардам берет: {SALES_PHONE}"
         )
 
+    # Нет в продаже
     if "приставка" in text_low or "ресивер" in text_low:
         return (
             "Саламатсызбы. Бизде приставка жок. "
@@ -177,6 +207,7 @@ def make_reply(text):
             f"Так маалымат үчүн менеджерге жазыңыз: {SALES_PHONE}"
         )
 
+    # Антенна / ТВ поддержка
     if (
         "антен" in text_low
         or "канал" in text_low
@@ -184,6 +215,8 @@ def make_reply(text):
         or "dtv" in text_low
         or "atv" in text_low
         or "сигнал" in text_low
+        or "иштеб" in text_low
+        or "чыкпай" in text_low
     ):
         return (
             "Саламатсызбы. Антенна боюнча жардам беребиз.\n"
@@ -191,6 +224,7 @@ def make_reply(text):
             "Телевизордун менюсун сүрөткө тартып жибериңиз."
         )
 
+    # Дефект / брак / поломка
     if (
         "сынды" in text_low
         or "сломался" in text_low
@@ -200,12 +234,15 @@ def make_reply(text):
         or "кыйшай" in text_low
         or "мыйрый" in text_low
         or "винт" in text_low
+        or "полкасы" in text_low
+        or "сварка" in text_low
     ):
         return (
             "Саламатсызбы. Сураныч, көйгөй болгон жердин сүрөтүн "
             "же кыска видео жибериңиз. Карап чыгып жардам беребиз."
         )
 
+    # Возврат
     if (
         "кайтарып" in text_low
         or "вернуть" in text_low
@@ -222,7 +259,7 @@ def make_reply(text):
 def should_skip_message(msg):
     msg_id = msg.get("id")
     author_id = msg.get("author_id")
-    text = str(msg.get("text", "")).lower()
+    text = str(msg.get("text", "")).lower().strip()
 
     if not msg_id:
         return True
@@ -230,20 +267,29 @@ def should_skip_message(msg):
     if msg_id in processed_messages:
         return True
 
+    # системные сообщения Bitrix/Wazzup
     if author_id == 0:
         return True
 
+    # свои сообщения оператора/бота
     if str(author_id) == str(USER_ID):
         return True
 
+    if not text or len(text) < 2:
+        return True
+
     blocked_phrases = [
-        "отправлено автоматически",
         "system wz",
+        "сообщение удалено",
         "сообщение не отправлено",
         "подозрения на спам",
         "создана новая сделка",
+        "контактная информация сохранена",
         "обращение направлено",
         "начат новый диалог",
+        "завершил работу",
+        "переданы дополнительные данные",
+        "отправлено автоматически"
     ]
 
     for phrase in blocked_phrases:
@@ -324,18 +370,17 @@ def polling_loop():
                 })
 
                 if should_skip_message(msg):
+                    print("SKIPPED MESSAGE:", msg_id)
                     continue
 
                 processed_messages.add(msg_id)
 
-                # Сначала жёсткие правила поддержки/покупки
                 rule_reply = make_reply(text)
 
                 if rule_reply:
                     reply = rule_reply
                     print("RULE REPLY:", reply)
                 else:
-                    # Потом AI, если правило не сработало
                     reply = generate_ai_reply(text)
                     print("AI REPLY:", reply)
 
